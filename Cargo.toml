@@ -5,3 +5,4 @@ authors = ["zuon <dev@dev.com>"]
 
 [dependencies]
 pi_lib = { path = "../pi_lib" }
+lz4 = "1.22.0"
