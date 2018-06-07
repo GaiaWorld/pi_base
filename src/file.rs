@@ -1,14 +1,14 @@
 use std::boxed::FnBox;
 use std::time::Duration;
 use std::path::Path;
-use std::sync::{Arc, Mutex, Condvar};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::fs::{File, OpenOptions, Metadata, rename, remove_file};
 use std::io::{Seek, Read, Write, Result, SeekFrom, Error, ErrorKind};
 
-use pi_vm::task::TaskType;
-use pi_vm::task_pool::TaskPool;
 use pi_lib::atom::Atom;
+
+use task::TaskType;
+use pi_base_impl::cast_store_task;
 
 /*
 * 文件块默认大小
@@ -69,13 +69,6 @@ const RENAME_ASYNC_FILE_INFO: &str = "rename asyn file";
 * 移除文件信息
 */
 const REMOVE_ASYNC_FILE_INFO: &str = "remove asyn file";
-
-/*
-* 存储任务池
-*/
-lazy_static! {
-	pub static ref STORE_TASK_POOL: Arc<(Mutex<TaskPool>, Condvar)> = Arc::new((Mutex::new(TaskPool::new(10)), Condvar::new()));
-}
 
 /*
 * 文件选项
@@ -148,11 +141,7 @@ impl AsyncFile {
                 },
             }
         };
-
-        let &(ref lock, ref cvar) = &**STORE_TASK_POOL;
-        let mut task_pool = lock.lock().unwrap();
-        (*task_pool).push(ASYNC_FILE_TASK_TYPE, OPEN_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(OPEN_ASYNC_FILE_INFO));
-        cvar.notify_one();
+        cast_store_task(ASYNC_FILE_TASK_TYPE, OPEN_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(OPEN_ASYNC_FILE_INFO));
     }
 
     //文件重命名
@@ -161,11 +150,7 @@ impl AsyncFile {
             let result = rename(from.clone(), to.clone());
             callback(from, to, result);
         };
-
-        let &(ref lock, ref cvar) = &**STORE_TASK_POOL;
-        let mut task_pool = lock.lock().unwrap();
-        (*task_pool).push(ASYNC_FILE_TASK_TYPE, RENAME_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(RENAME_ASYNC_FILE_INFO));
-        cvar.notify_one();
+        cast_store_task(ASYNC_FILE_TASK_TYPE, RENAME_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(RENAME_ASYNC_FILE_INFO));
     }
 
     //移除指定文件
@@ -174,11 +159,7 @@ impl AsyncFile {
             let result = remove_file(path);
             callback(result);
         };
-
-        let &(ref lock, ref cvar) = &**STORE_TASK_POOL;
-        let mut task_pool = lock.lock().unwrap();
-        (*task_pool).push(ASYNC_FILE_TASK_TYPE, REMOVE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(REMOVE_ASYNC_FILE_INFO));
-        cvar.notify_one();
+        cast_store_task(ASYNC_FILE_TASK_TYPE, REMOVE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(REMOVE_ASYNC_FILE_INFO));
     }
 
     //检查是否是符号链接
@@ -299,11 +280,7 @@ impl AsyncFile {
                 },
             }
         };
-
-        let &(ref lock, ref cvar) = &**STORE_TASK_POOL;
-        let mut task_pool = lock.lock().unwrap();
-        (*task_pool).push(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(READ_ASYNC_FILE_INFO));
-        cvar.notify_one();
+        cast_store_task(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(READ_ASYNC_FILE_INFO));
     }
 
     //从指定位置开始，写指定字节
@@ -345,11 +322,7 @@ impl AsyncFile {
                 callback(init_write_file(self), result);
             }
         };
-
-        let &(ref lock, ref cvar) = &**STORE_TASK_POOL;
-        let mut task_pool = lock.lock().unwrap();
-        (*task_pool).push(ASYNC_FILE_TASK_TYPE, WRITE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(WRITE_ASYNC_FILE_INFO));
-        cvar.notify_one();
+        cast_store_task(ASYNC_FILE_TASK_TYPE, WRITE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(WRITE_ASYNC_FILE_INFO));
     }
 
     //复制异步文件

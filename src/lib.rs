@@ -1,21 +1,32 @@
 #![crate_type = "rlib"]
-#![feature(integer_atomics)]
+#![feature(asm)]
+#![feature(libc)]
+#![feature(fnbox)]
+#![feature(drain_filter)]
+#![feature(rustc_private)]
+#![feature(type_ascription)]
 #![feature(duration_extras)]
-#![feature(custom_derive,asm,box_syntax,box_patterns)]
-#![feature(pointer_methods)]
-#![feature(core_intrinsics)]
-#![feature(generators, generator_trait)]
-#![feature(associated_type_defaults)]
-#![feature(exclusive_range_pattern)]
-#![feature(box_into_raw_non_null)]
-#![feature(assoc_unix_epoch)]
-#![feature(trait_alias)]
-#![feature(nll)]
+#![feature(slice_internals)]
+#![feature(duration_from_micros)]
 
-#[allow(dead_code,unused_variables,non_snake_case,unused_parens,unused_assignments,unused_unsafe,unused_imports)]
+extern crate fnv;
+extern crate core;
+extern crate time;
+extern crate rand;
+extern crate libc;
+extern crate threadpool;
+
+#[macro_use]
+extern crate lazy_static;
 
 extern crate lz4;
 
 extern crate pi_lib;
 
+pub mod pi_base_impl;
+pub mod file;
+pub mod worker;
+pub mod worker_pool;
+pub mod task;
+pub mod task_pool;
 pub mod util;

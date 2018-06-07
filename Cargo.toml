@@ -4,5 +4,12 @@ version = "0.1.0"
 authors = ["zuon <dev@dev.com>"]
 
 [dependencies]
+fnv = "*"
+time = "*"
+rand = "*"
+lz4 = "*"
+libc = "*"
+threadpool = "*"
+lazy_static = "*"
+
 pi_lib = { path = "../pi_lib" }
-lz4 = "1.22.0"
