@@ -1,7 +1,15 @@
 [package]
 name = "pi_base"
 version = "0.1.0"
-authors = ["zmythleo <zmythleo@gmail.com>"]
+authors = ["zuon <dev@dev.com>"]
 
 [dependencies]
-lz4 = "1.22.0"
+fnv = "*"
+time = "*"
+rand = "*"
+lz4 = "*"
+libc = "*"
+threadpool = "*"
+lazy_static = "*"
+
+pi_lib = { path = "../pi_lib" }
