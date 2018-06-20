@@ -8,6 +8,7 @@
 #![feature(duration_extras)]
 #![feature(slice_internals)]
 #![feature(duration_from_micros)]
+#![feature(integer_atomics)]
 
 extern crate fnv;
 extern crate core;
@@ -30,3 +31,4 @@ pub mod worker_pool;
 pub mod task;
 pub mod task_pool;
 pub mod util;
+pub mod timer;
