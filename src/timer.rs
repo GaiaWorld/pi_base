@@ -38,19 +38,27 @@ impl Timer{
 			wheel.lock().unwrap().set_time(now_millis());
 			loop {
 				thread::sleep(Duration::from_millis(sleep_time));
-				let old = now_millis();
-				let mut now = old;
-				while now - wheel.lock().unwrap().time >= s.clock_ms{
-					let r = wheel.lock().unwrap().roll();
-					for v in r.into_iter(){
-						let func: Box<FnBox()> = unsafe { transmute(v.0.elem) };
-						func();
-						s.statistics.run_count.fetch_add(1, Ordering::Relaxed);//统计运行任务个数
-					}
-					now = now_millis();
-				}
-				s.statistics.run_time.fetch_add(now - old, Ordering::Relaxed); //统计运行时长
-				sleep_time = s.clock_ms - (now - wheel.lock().unwrap().time);
+				let mut now = now_millis();
+                loop {
+                    let r = {
+                        let mut w = wheel.lock().unwrap();
+                        match now >= s.clock_ms + w.time{
+                            true => w.roll(),
+                            false => {
+                                sleep_time = s.clock_ms + w.time- now;
+                                break;
+                            }
+                        }
+                    };
+                    s.statistics.run_count.fetch_add(r.len(), Ordering::Relaxed);//统计运行任务个数
+                    for v in r.into_iter(){
+                        let func: Box<FnBox()> = unsafe { transmute(v.0.elem) };
+                        func();
+                    }
+                    let old = now;
+                    now = now_millis();
+                    s.statistics.run_time.fetch_add(now - old, Ordering::Relaxed); //统计运行时长
+                }
 			}
 		});
 	}
@@ -60,9 +68,12 @@ impl Timer{
 		TIMER.wheel.lock().unwrap().insert(Item{elem: unsafe { transmute(f) }, time_point: now_millis() + ms})
 	}
 
-	pub fn cancel_task(&self, index: Arc<AtomicIsize>) -> Option<Box<FnBox()>>{
+	pub fn cancel(&self, index: Arc<AtomicIsize>) -> Option<Box<FnBox()>>{
 		match self.wheel.lock().unwrap().try_remove(index) {
-			Some(v) => unsafe { transmute(v.elem) },
+			Some(v) => {
+                self.statistics.cancel_count.fetch_add(1, Ordering::Relaxed);
+                unsafe { transmute(v.elem) }
+            },
 			None => {None},
 		}
 	}
@@ -71,6 +82,7 @@ impl Timer{
 #[derive(Clone)]
 struct Statistics {
 	pub all_count: Arc<AtomicUsize>,
+    pub cancel_count: Arc<AtomicUsize>,
 	pub run_count: Arc<AtomicUsize>,
 	pub run_time: Arc<AtomicU64>,
 }
@@ -79,6 +91,7 @@ impl Statistics{
 	pub fn new() -> Statistics{
 		Statistics{
 			all_count: Arc::new(AtomicUsize::new(0)),
+            cancel_count: Arc::new(AtomicUsize::new(0)),
 			run_count: Arc::new(AtomicUsize::new(0)),
 			run_time: Arc::new(AtomicU64::new(0)),
 		}
