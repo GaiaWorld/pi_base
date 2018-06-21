@@ -21,8 +21,11 @@ pub struct Timer{
 }
 
 impl Timer{
-	pub fn new(clock_ms: u64) -> Self{
+	pub fn new(mut clock_ms: u64) -> Self{
 		let wheel = Arc::new(Mutex::new(Wheel::new()));
+        if clock_ms < 10{
+            clock_ms = 10;
+        }
 		Timer{
 			wheel: wheel, 
 			statistics: Statistics::new(),
@@ -35,10 +38,10 @@ impl Timer{
 		thread::spawn(move ||{
 			let wheel = s.wheel.clone();
 			let mut sleep_time = s.clock_ms;
-			wheel.lock().unwrap().set_time(now_millis());
+            wheel.lock().unwrap().set_time(now_millis());
 			loop {
-				thread::sleep(Duration::from_millis(sleep_time));
-				let mut now = now_millis();
+                thread::sleep(Duration::from_millis(sleep_time));
+                let mut now = now_millis();
                 loop {
                     let r = {
                         let mut w = wheel.lock().unwrap();
@@ -100,11 +103,17 @@ impl Statistics{
 
 #[test]
 fn test(){
-	let f = ||{
-		println!("test time:{}", "success");
+    TIMER.run();
+    thread::sleep(Duration::from_millis(8));
+    //let now = now_millis();
+	let f = move||{
+        // let n = now_millis();
+		// println!("test time:{}", n - now);
+        println!("run_time-------------{}", TIMER.statistics.run_time.load(Ordering::Relaxed));
 	};
-	TIMER.run();
-	TIMER.set_timeout(Box::new(f), 1000);
-	thread::sleep(Duration::from_millis(2000));
+    TIMER.set_timeout(Box::new(f), 10);
+	//let index = TIMER.set_timeout(Box::new(f), 10);
+    //println!("index-------------{}", index.load(Ordering::Relaxed));
+	thread::sleep(Duration::from_millis(1000));
 }
 
