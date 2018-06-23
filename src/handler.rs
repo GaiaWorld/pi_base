@@ -95,13 +95,13 @@ pub trait ES5Type {
 	fn get_str(&self) -> String;
 
     //获取对象指定域的值
-	fn get_field(&self, key: String) -> Self;
+	fn get_field(&self, key: String) -> Box<ES5Type>;
 
     //获取数组长度
     fn get_array_length(&self) -> usize;
 
     //获取数组指定偏移的值
-	fn get_index(&self, index: u32) -> Self;
+	fn get_index(&self, index: u32) -> Box<ES5Type>;
 
     //获取指定Buffer的引用
     fn to_bytes(&self) -> &[u8];
@@ -194,9 +194,9 @@ pub trait ES5 {
 */
 pub trait Handler {
     type Args;
-    type ArgsRet;
-    type HandleRet;
+    type ArgsResult;
+    type HandleResult;
 
     //处理方法
-    fn handle(&self, env: Arc<Env>, topic: Atom, args: Box<FnBox(Self::Args) -> Self::ArgsRet>) -> Self::HandleRet;
+    fn handle(&self, env: Arc<Env>, event: Atom, args: Box<FnBox(Self::Args) -> Self::ArgsResult>) -> Self::HandleResult;
 }
