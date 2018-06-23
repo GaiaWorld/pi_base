@@ -193,8 +193,10 @@ pub trait ES5 {
 * 通用处理器
 */
 pub trait Handler {
-    type VM: ES5;
+    type Args;
+    type ArgsRet;
+    type HandleRet;
 
     //处理方法
-    fn handle(&self, env: Arc<Env>, topic: Atom, args: Box<FnBox(Arc<Self::VM>) -> usize>);
+    fn handle(&self, env: Arc<Env>, topic: Atom, args: Box<FnBox(Self::Args) -> Self::ArgsRet>) -> Self::HandleRet;
 }
