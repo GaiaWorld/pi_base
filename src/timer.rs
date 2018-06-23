@@ -21,8 +21,11 @@ pub struct Timer{
 }
 
 impl Timer{
-	pub fn new(clock_ms: u64) -> Self{
+	pub fn new(mut clock_ms: u64) -> Self{
 		let wheel = Arc::new(Mutex::new(Wheel::new()));
+        if clock_ms < 10{
+            clock_ms = 10;
+        }
 		Timer{
 			wheel: wheel, 
 			statistics: Statistics::new(),
@@ -35,10 +38,11 @@ impl Timer{
 		thread::spawn(move ||{
 			let wheel = s.wheel.clone();
 			let mut sleep_time = s.clock_ms;
-			wheel.lock().unwrap().set_time(now_millis());
+            wheel.lock().unwrap().set_time(now_millis());
 			loop {
-				thread::sleep(Duration::from_millis(sleep_time));
-				let mut now = now_millis();
+                thread::sleep(Duration::from_millis(sleep_time));
+                let mut now = now_millis();
+                now = s.run_zero(now);//运行0毫秒任务
                 loop {
                     let r = {
                         let mut w = wheel.lock().unwrap();
@@ -50,22 +54,19 @@ impl Timer{
                             }
                         }
                     };
-                    s.statistics.run_count.fetch_add(r.len(), Ordering::Relaxed);//统计运行任务个数
-                    for v in r.into_iter(){
-                        let func: Box<FnBox()> = unsafe { transmute(v.0.elem) };
-                        func();
-                    }
-                    let old = now;
-                    now = now_millis();
-                    s.statistics.run_time.fetch_add(now - old, Ordering::Relaxed); //统计运行时长
+                    now = s.run_task(&r, now);
+                    now = s.run_zero(now);//运行0毫秒任务
                 }
+
 			}
 		});
 	}
 
 	pub fn set_timeout(&self, f: Box<FnBox()>, ms: u64) -> Arc<AtomicIsize>{
 		self.statistics.all_count.fetch_add(1, Ordering::Relaxed);
-		TIMER.wheel.lock().unwrap().insert(Item{elem: unsafe { transmute(f) }, time_point: now_millis() + ms})
+        let mut w = TIMER.wheel.lock().unwrap();
+        let time = w.time;
+		w.insert(Item{elem: unsafe { transmute(f) }, time_point: time + ms})
 	}
 
 	pub fn cancel(&self, index: Arc<AtomicIsize>) -> Option<Box<FnBox()>>{
@@ -77,6 +78,36 @@ impl Timer{
 			None => {None},
 		}
 	}
+
+    //执行任务，返回任务执行完的时间
+    fn run_task(&self, r: &Vec<(Item<(usize, usize)>, Arc<AtomicIsize>)>, old: u64) -> u64{
+        self.statistics.run_count.fetch_add(r.len(), Ordering::Relaxed);//统计运行任务个数
+        for v in r.iter(){
+            let func: Box<FnBox()> = unsafe { transmute(v.0.elem) };
+            func();
+        }
+        let now = now_millis();
+        self.statistics.run_time.fetch_add(now - old, Ordering::Relaxed); //统计运行时长
+        now
+    }
+
+    fn run_zero(&self, mut now: u64) -> u64{
+        loop {
+            let mut r = {
+                let mut w = self.wheel.lock().unwrap();
+                match w.zero_size() > 0{
+                    true => w.get_zero(),
+                    false => {
+                        break;
+                    }
+                }
+            };
+            now = self.run_task(&r, now);
+            r.clear();
+            self.wheel.lock().unwrap().set_zero_cache(r);
+        }
+        now
+    }
 }
 
 #[derive(Clone)]
@@ -100,11 +131,17 @@ impl Statistics{
 
 #[test]
 fn test(){
-	let f = ||{
-		println!("test time:{}", "success");
+    TIMER.run();
+    //thread::sleep(Duration::from_millis(8));
+    let now = now_millis();
+	let f = move||{
+        //let n = now_millis();
+		// println!("test time:{}", n - now);
+        // println!("run_time-------------{}", TIMER.statistics.run_time.load(Ordering::Relaxed));
 	};
-	TIMER.run();
-	TIMER.set_timeout(Box::new(f), 1000);
-	thread::sleep(Duration::from_millis(2000));
+    TIMER.set_timeout(Box::new(f), 10);
+	//let index = TIMER.set_timeout(Box::new(f), 1000);
+    //println!("index-------------{}", index.load(Ordering::Relaxed));
+	thread::sleep(Duration::from_millis(500));
 }
 
