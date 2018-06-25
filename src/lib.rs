@@ -30,6 +30,5 @@ pub mod worker;
 pub mod worker_pool;
 pub mod task;
 pub mod task_pool;
-pub mod handler;
 pub mod util;
 pub mod timer;
