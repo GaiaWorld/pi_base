@@ -62,11 +62,11 @@ impl Timer{
 		});
 	}
 
-	pub fn set_timeout(&self, f: Box<FnBox()>, ms: u64) -> Arc<AtomicIsize>{
+	pub fn set_timeout(&self, f: Box<FnBox()>, ms: u32) -> Arc<AtomicIsize>{
 		self.statistics.all_count.fetch_add(1, Ordering::Relaxed);
         let mut w = TIMER.wheel.lock().unwrap();
         let time = w.time;
-		w.insert(Item{elem: unsafe { transmute(f) }, time_point: time + ms})
+		w.insert(Item{elem: unsafe { transmute(f) }, time_point: time + (ms as u64)})
 	}
 
 	pub fn cancel(&self, index: Arc<AtomicIsize>) -> Option<Box<FnBox()>>{
@@ -135,6 +135,7 @@ fn test(){
     //thread::sleep(Duration::from_millis(8));
     let now = now_millis();
 	let f = move||{
+        println!("test timer Success");
         //let n = now_millis();
 		// println!("test time:{}", n - now);
         // println!("run_time-------------{}", TIMER.statistics.run_time.load(Ordering::Relaxed));
