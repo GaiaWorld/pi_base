@@ -1,6 +1,13 @@
+use std::sync::Arc;
+use std::path::Path;
+use std::clone::Clone;
 use std::boxed::FnBox;
 use std::time::Duration;
-use std::path::Path;
+#[cfg(any(unix))]
+use std::os::unix::fs::FileExt;
+#[cfg(any(windows))]
+use std::os::windows::fs::FileExt;
+
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::fs::{File, OpenOptions, Metadata, rename, remove_file};
 use std::io::{Seek, Read, Write, Result, SeekFrom, Error, ErrorKind};
@@ -92,6 +99,19 @@ pub enum WriteOptions {
 }
 
 /*
+* 共享接口
+*/
+pub trait Shared {
+    type T;
+
+    //原子的从指定位置开始读指定字节
+    fn pread(self, pos: u64, len: usize, callback: Box<FnBox(Arc<Self::T>, Result<Vec<u8>>)>);
+
+    //原子的从指定位置开始写指定字节
+    fn pwrite(mut self, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<Self::T>, Result<usize>)>);
+}
+
+/*
 * 异步文件
 */
 pub struct AsyncFile{
@@ -105,6 +125,22 @@ impl Debug for AsyncFile {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "AsyncFile[file = {:?}, buffer_size = {}, current_pos = {}, buffer_len = {}, buffer_size = {}]", 
             self.inner, self.buffer_size, self.pos, self.buffer.as_ref().unwrap().len(), self.buffer.as_ref().unwrap().capacity())
+    }
+}
+
+impl Clone for AsyncFile {
+    fn clone(&self) -> Self {
+        match self.inner.try_clone() {
+            Err(e) => panic!("{:?}", e),
+            Ok(inner) => {
+                AsyncFile {
+                    inner: inner, 
+                    buffer_size: self.buffer_size, 
+                    pos: 0, 
+                    buffer: Some(Vec::with_capacity(0))
+                }
+            },
+        }
     }
 }
 
@@ -324,20 +360,65 @@ impl AsyncFile {
         };
         cast_store_task(ASYNC_FILE_TASK_TYPE, WRITE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(WRITE_ASYNC_FILE_INFO));
     }
+}
 
-    //复制异步文件
-    pub unsafe fn try_clone(&self) -> Result<Self> {
-        match self.inner.try_clone() {
-            Err(e) => Err(e),
-            Ok(inner) => {
-                Ok(AsyncFile {
-                    inner: inner, 
-                    buffer_size: self.buffer_size, 
-                    pos: 0, 
-                    buffer: Some(Vec::with_capacity(0))
-                })
-            },
-        }
+impl Shared for Arc<AsyncFile> {
+    type T = AsyncFile;
+
+    fn pread(self, pos: u64, len: usize, callback: Box<FnBox(Arc<Self::T>, Result<Vec<u8>>)>) {
+        let func = move || {
+            let mut vec: Vec<u8> = Vec::with_capacity(len);
+            vec.resize(len, 0);
+
+            #[cfg(any(unix))]
+            let r = self.inner.read_at(&mut vec[..], pos);
+            #[cfg(any(windows))]
+            let r = self.inner.seek_read(&mut vec[..], pos);
+
+            match r {
+                Ok(len) => {
+                    //读完成
+                    vec.truncate(len);
+                    callback(self, Ok(vec))
+                },
+                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
+                    //重复读
+                    self.pread(pos, len, callback);
+                },
+                Err(e) => callback(self, Err(e)),
+            }
+        };
+        cast_store_task(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(READ_ASYNC_FILE_INFO));
+    }
+
+    fn pwrite(mut self, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<Self::T>, Result<usize>)>) {
+        let func = move || {
+            #[cfg(any(unix))]
+            let r = self.inner.write_at(&bytes[..], pos);
+            #[cfg(any(windows))]
+            let r = self.inner.seek_write(&bytes[..], pos);
+
+            match r {
+                Ok(len) => {
+                    //写完成
+                    let result = match options {
+                        WriteOptions::None => Ok(len),
+                        WriteOptions::Flush => Arc::make_mut(&mut self).inner.flush().and(Ok(len)),
+                        WriteOptions::Sync(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_data()).and(Ok(len)),
+                        WriteOptions::Sync(false) => Arc::make_mut(&mut self).inner.sync_data().and(Ok(len)),
+                        WriteOptions::SyncAll(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_all()).and(Ok(len)),
+                        WriteOptions::SyncAll(false) => Arc::make_mut(&mut self).inner.sync_all().and(Ok(len)),
+                    };
+                    callback(self, result);
+                },
+                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
+                    //重复写
+                    self.pwrite(options, pos, bytes, callback);
+                },
+                Err(e) => callback(self, Err(e)),
+            }
+        };
+        cast_store_task(ASYNC_FILE_TASK_TYPE, WRITE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(WRITE_ASYNC_FILE_INFO));
     }
 }
 
@@ -368,13 +449,13 @@ fn alloc_buffer(mut file: AsyncFile, file_size: u64, len: usize) -> AsyncFile {
     file
 }
 
-#[cfg(unix)]
+#[cfg(any(unix))]
 fn get_block_size(meta: &Metadata) -> usize {
     use std::os::unix::fs::MetadataExt;
     metadata.blksize() as usize
 }
 
-#[cfg(not(unix))]
+#[cfg(any(windows))]
 fn get_block_size(_meta: &Metadata) -> usize {
     BLOCK_SIZE
 }
