@@ -394,9 +394,8 @@ impl Shared for Arc<AsyncFile> {
                     //继续读
                     pread_continue(vec, self, pos + short_len as u64, len - short_len, callback);
                 },
-                Ok(len) => {
+                Ok(_len) => {
                     //读完成
-                    vec.truncate(len);
                     callback(self, Ok(vec))
                 },
                 Err(ref e) if e.kind() == ErrorKind::Interrupted => {
@@ -499,9 +498,8 @@ fn pread_continue(mut vec: Vec<u8>, file: Arc<AsyncFile>, pos: u64, len: usize, 
                 //继续读
                 pread_continue(vec, file, pos + short_len as u64, len - short_len, callback);
             },
-            Ok(len) => {
+            Ok(_len) => {
                 //读完成
-                vec.truncate(len);
                 callback(file, Ok(vec))
             },
             Err(ref e) if e.kind() == ErrorKind::Interrupted => {
