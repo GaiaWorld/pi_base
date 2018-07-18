@@ -114,6 +114,9 @@ pub enum WriteOptions {
 pub trait Shared {
     type T;
 
+    //通过异步文件构建共享异步文件
+    fn new(file: Self::T) -> Arc<Self::T>;
+
     //原子的从指定位置开始读指定字节
     fn pread(self, pos: u64, len: usize, callback: Box<FnBox(Arc<Self::T>, Result<Vec<u8>>)>);
 
@@ -128,6 +131,10 @@ pub type SharedFile = Arc<AsyncFile>;
 
 impl Shared for SharedFile {
     type T = AsyncFile;
+
+    fn new(file: Self::T) -> Arc<Self::T> {
+        Arc::new(file)
+    }
 
     fn pread(self, pos: u64, len: usize, callback: Box<FnBox(Arc<Self::T>, Result<Vec<u8>>)>) {
         if len == 0 {
