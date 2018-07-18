@@ -122,6 +122,87 @@ pub trait Shared {
 }
 
 /*
+* 共享异步文件
+*/
+pub type SharedFile = Arc<AsyncFile>;
+
+impl Shared for SharedFile {
+    type T = AsyncFile;
+
+    fn pread(self, pos: u64, len: usize, callback: Box<FnBox(Arc<Self::T>, Result<Vec<u8>>)>) {
+        if len == 0 {
+            return callback(self, Err(Error::new(ErrorKind::Other, "pread failed, invalid len")));
+        }
+
+        let func = move || {
+            let mut vec: Vec<u8> = Vec::with_capacity(len);
+            vec.resize(len, 0);
+
+            #[cfg(any(unix))]
+            let r = self.inner.read_at(&mut vec[..], pos);
+            #[cfg(any(windows))]
+            let r = self.inner.seek_read(&mut vec[..], pos);
+
+            match r {
+                Ok(short_len) if short_len < len => {
+                    //继续读
+                    pread_continue(vec, self, pos + short_len as u64, len - short_len, callback);
+                },
+                Ok(_len) => {
+                    //读完成
+                    callback(self, Ok(vec))
+                },
+                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
+                    //重复读
+                    self.pread(pos, len, callback);
+                },
+                Err(e) => callback(self, Err(e)),
+            }
+        };
+        cast_store_task(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_READ_ASYNC_FILE_INFO));
+    }
+
+    fn pwrite(mut self, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<Self::T>, Result<usize>)>) {
+        let len = bytes.len();
+        if len == 0 {
+            return callback(self, Ok(0));
+        }
+
+        let func = move || {
+            #[cfg(any(unix))]
+            let r = self.inner.write_at(&bytes[..], pos);
+            #[cfg(any(windows))]
+            let r = self.inner.seek_write(&bytes[..], pos);
+
+            match r {
+                Ok(short_len) if short_len < len => {
+                    //继续写
+                    pwrite_continue(len - short_len, self, options, pos + short_len as u64, bytes, callback);
+                },
+                Ok(len) => {
+                    //写完成
+                    let result = match options {
+                        WriteOptions::None => Ok(len),
+                        WriteOptions::Flush => Arc::make_mut(&mut self).inner.flush().and(Ok(len)),
+                        WriteOptions::Sync(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_data()).and(Ok(len)),
+                        WriteOptions::Sync(false) => Arc::make_mut(&mut self).inner.sync_data().and(Ok(len)),
+                        WriteOptions::SyncAll(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_all()).and(Ok(len)),
+                        WriteOptions::SyncAll(false) => Arc::make_mut(&mut self).inner.sync_all().and(Ok(len)),
+                    };
+                    callback(self, result);
+                },
+                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
+                    //重复写
+                    self.pwrite(options, pos, bytes, callback);
+                },
+                Err(e) => callback(self, Err(e)),
+            }
+        };
+        cast_store_task(ASYNC_FILE_TASK_TYPE, WRITE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_WRITE_ASYNC_FILE_INFO));
+    }
+}
+
+/*
 * 异步文件
 */
 pub struct AsyncFile{
@@ -372,82 +453,6 @@ impl AsyncFile {
     }
 }
 
-impl Shared for Arc<AsyncFile> {
-    type T = AsyncFile;
-
-    fn pread(self, pos: u64, len: usize, callback: Box<FnBox(Arc<Self::T>, Result<Vec<u8>>)>) {
-        if len == 0 {
-            return callback(self, Err(Error::new(ErrorKind::Other, "pread failed, invalid len")));
-        }
-
-        let func = move || {
-            let mut vec: Vec<u8> = Vec::with_capacity(len);
-            vec.resize(len, 0);
-
-            #[cfg(any(unix))]
-            let r = self.inner.read_at(&mut vec[..], pos);
-            #[cfg(any(windows))]
-            let r = self.inner.seek_read(&mut vec[..], pos);
-
-            match r {
-                Ok(short_len) if short_len < len => {
-                    //继续读
-                    pread_continue(vec, self, pos + short_len as u64, len - short_len, callback);
-                },
-                Ok(_len) => {
-                    //读完成
-                    callback(self, Ok(vec))
-                },
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
-                    //重复读
-                    self.pread(pos, len, callback);
-                },
-                Err(e) => callback(self, Err(e)),
-            }
-        };
-        cast_store_task(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_READ_ASYNC_FILE_INFO));
-    }
-
-    fn pwrite(mut self, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<Self::T>, Result<usize>)>) {
-        let len = bytes.len();
-        if len == 0 {
-            return callback(self, Ok(0));
-        }
-
-        let func = move || {
-            #[cfg(any(unix))]
-            let r = self.inner.write_at(&bytes[..], pos);
-            #[cfg(any(windows))]
-            let r = self.inner.seek_write(&bytes[..], pos);
-
-            match r {
-                Ok(short_len) if short_len < len => {
-                    //继续写
-                    pwrite_continue(len - short_len, self, options, pos + short_len as u64, bytes, callback);
-                },
-                Ok(len) => {
-                    //写完成
-                    let result = match options {
-                        WriteOptions::None => Ok(len),
-                        WriteOptions::Flush => Arc::make_mut(&mut self).inner.flush().and(Ok(len)),
-                        WriteOptions::Sync(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_data()).and(Ok(len)),
-                        WriteOptions::Sync(false) => Arc::make_mut(&mut self).inner.sync_data().and(Ok(len)),
-                        WriteOptions::SyncAll(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_all()).and(Ok(len)),
-                        WriteOptions::SyncAll(false) => Arc::make_mut(&mut self).inner.sync_all().and(Ok(len)),
-                    };
-                    callback(self, result);
-                },
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
-                    //重复写
-                    self.pwrite(options, pos, bytes, callback);
-                },
-                Err(e) => callback(self, Err(e)),
-            }
-        };
-        cast_store_task(ASYNC_FILE_TASK_TYPE, WRITE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_WRITE_ASYNC_FILE_INFO));
-    }
-}
-
 #[inline]
 fn init_read_file(mut file: AsyncFile) -> AsyncFile {
     file.pos = 0;
@@ -486,7 +491,7 @@ fn get_block_size(_meta: &Metadata) -> usize {
     BLOCK_SIZE
 }
 
-fn pread_continue(mut vec: Vec<u8>, file: Arc<AsyncFile>, pos: u64, len: usize, callback: Box<FnBox(Arc<<Arc<AsyncFile> as Shared>::T>, Result<Vec<u8>>)>) {
+fn pread_continue(mut vec: Vec<u8>, file: SharedFile, pos: u64, len: usize, callback: Box<FnBox(Arc<<SharedFile as Shared>::T>, Result<Vec<u8>>)>) {
     let func = move || {
         #[cfg(any(unix))]
         let r = file.inner.read_at(&mut vec[pos as usize..(pos as usize + len)], pos);
@@ -512,7 +517,7 @@ fn pread_continue(mut vec: Vec<u8>, file: Arc<AsyncFile>, pos: u64, len: usize, 
     cast_store_task(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_READ_ASYNC_FILE_INFO));
 }
 
-fn pwrite_continue(len: usize, mut file: Arc<AsyncFile>, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<<Arc<AsyncFile> as Shared>::T>, Result<usize>)>) {
+fn pwrite_continue(len: usize, mut file: SharedFile, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<<SharedFile as Shared>::T>, Result<usize>)>) {
     let func = move || {
         #[cfg(any(unix))]
         let r = file.inner.write_at(&bytes[pos as usize..len], pos);
