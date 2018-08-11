@@ -489,8 +489,8 @@ fn alloc_buffer(mut file: AsyncFile, file_size: u64, len: usize) -> AsyncFile {
 
 #[cfg(any(unix))]
 fn get_block_size(meta: &Metadata) -> usize {
-    use std::fs::metadata;
-    metadata.blksize() as usize
+    use std::fs::Metadata::blksize;
+    blksize() as usize
 }
 
 #[cfg(any(windows))]
