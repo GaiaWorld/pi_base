@@ -129,20 +129,20 @@ impl Statistics{
 	}
 }
 
-#[test]
-fn test(){
-    TIMER.run();
-    //thread::sleep(Duration::from_millis(8));
-    let now = now_millis();
-	let f = move||{
-        println!("test timer Success");
-        //let n = now_millis();
-		// println!("test time:{}", n - now);
-        // println!("run_time-------------{}", TIMER.statistics.run_time.load(Ordering::Relaxed));
-	};
-    TIMER.set_timeout(Box::new(f), 10);
-	//let index = TIMER.set_timeout(Box::new(f), 1000);
-    //println!("index-------------{}", index.load(Ordering::Relaxed));
-	thread::sleep(Duration::from_millis(500));
-}
+// #[test]
+// fn test(){
+//     TIMER.run();
+//     //thread::sleep(Duration::from_millis(8));
+//     let now = now_millis();
+// 	let f = move||{
+//         println!("test timer Success");
+//         //let n = now_millis();
+// 		// println!("test time:{}", n - now);
+//         // println!("run_time-------------{}", TIMER.statistics.run_time.load(Ordering::Relaxed));
+// 	};
+//     TIMER.set_timeout(Box::new(f), 10);
+// 	//let index = TIMER.set_timeout(Box::new(f), 1000);
+//     //println!("index-------------{}", index.load(Ordering::Relaxed));
+// 	thread::sleep(Duration::from_millis(500));
+// }
 

@@ -9,6 +9,8 @@ time = "*"
 rand = "*"
 lz4 = "*"
 libc = "*"
+npnc = "*"
+futures = "0.1.23"
 threadpool = "*"
 lazy_static = "*"
 

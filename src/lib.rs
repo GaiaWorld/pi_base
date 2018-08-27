@@ -9,12 +9,14 @@
 #![feature(slice_internals)]
 #![feature(duration_from_micros)]
 #![feature(integer_atomics)]
+#![feature(extern_prelude)]
 
 extern crate fnv;
 extern crate core;
 extern crate time;
 extern crate rand;
 extern crate libc;
+extern crate futures;
 extern crate threadpool;
 
 #[macro_use]
@@ -26,9 +28,12 @@ extern crate pi_lib;
 
 pub mod pi_base_impl;
 pub mod file;
+pub mod future;
+pub mod future_pool;
 pub mod worker;
 pub mod worker_pool;
 pub mod task;
 pub mod task_pool;
 pub mod util;
 pub mod timer;
+extern crate npnc;
