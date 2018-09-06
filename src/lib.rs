@@ -16,6 +16,7 @@ extern crate core;
 extern crate time;
 extern crate rand;
 extern crate libc;
+extern crate npnc;
 extern crate futures;
 extern crate threadpool;
 
@@ -36,4 +37,3 @@ pub mod task;
 pub mod task_pool;
 pub mod util;
 pub mod timer;
-extern crate npnc;

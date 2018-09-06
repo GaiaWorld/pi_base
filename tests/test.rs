@@ -15,7 +15,7 @@ use std::result::Result as NormalResult;
 use std::io::{Error, Result};
 
 use futures::*;
-use npnc::bounded::mpmc::Producer;
+use npnc::bounded::mpmc::{Producer, Consumer};
 
 use pi_lib::atom::Atom;
 use pi_base::task::TaskType;
@@ -23,7 +23,6 @@ use pi_base::pi_base_impl::{STORE_TASK_POOL, EXT_TASK_POOL, cast_ext_task};
 use pi_base::worker_pool::WorkerPool;
 use pi_base::file::{Shared, AsyncFile, AsynFileOptions, WriteOptions};
 use pi_base::util::{CompressLevel, compress, uncompress};
-use pi_base::future::FutTask;
 use pi_base::future_pool::FutTaskPool;
 
 // #[test]
@@ -185,14 +184,23 @@ fn test_future() {
     worker_pool.run(EXT_TASK_POOL.clone());
 
 	let pool = FutTaskPool::new(cast_ext_task);
-	let callback = Box::new(move |executor: fn(TaskType, u64, Box<FnBox()>, Atom), sender: Arc<Producer<NormalResult<usize, Error>>>, uid: usize| {
+	let callback = Box::new(move |executor: fn(TaskType, u64, Box<FnBox()>, Atom), 
+									sender: Arc<Producer<NormalResult<usize, Error>>>, 
+									receiver: Arc<Consumer<task::Task>>,
+									uid: usize| {
 		let func = Box::new(move || {
 			thread::sleep_ms(10);
-			assert!(sender.produce(Ok(uid)).is_ok());
+			match receiver.consume() {
+				Err(e) => panic!("receive failed, {:?}", e),
+				Ok(task) => {
+					task.notify();
+					assert!(sender.produce(Ok(uid)).is_ok());
+				},
+			}
 		});
 		executor(TaskType::Sync, 10000000, func, Atom::from("test future task"));
 	});
-	let mut future: FutTask<usize, Error> = pool.spawn(callback, 5000);
+	let mut future = pool.spawn(callback, 5000);
 	let mut count = 0;
 	loop {
 		count += 1;

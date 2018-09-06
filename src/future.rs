@@ -1,9 +1,10 @@
-use std::panic::resume_unwind;
 use std::sync::Arc;
+use std::panic::resume_unwind;
+use std::marker::{Send, Sync};
 
 use futures::*;
 use npnc::ConsumeError;
-use npnc::bounded::mpmc::Consumer;
+use npnc::bounded::mpmc::{Producer, Consumer};
 
 use util::now_millisecond;
 
@@ -15,15 +16,20 @@ pub struct FutTask<T, E> {
     uid:        usize,                          //未来任务id
     timeout:    i64,                            //未来任务超时时间
     inner:      Arc<Consumer<Result<T, E>>>,    //内部未来任务
+    sender:     Arc<Producer<task::Task>>,      //内部任务发送者
 }
+
+unsafe impl<T: Send + 'static, E: Send + 'static> Send for FutTask<T, E> {}
+unsafe impl<T: Send + 'static, E: Send + 'static> Sync for FutTask<T, E> {}
 
 impl<T: Send + 'static, E: Send + 'static> FutTask<T, E> {
     //构建一个未来任务
-    pub fn new(uid: usize, timeout: u32, inner: Arc<Consumer<Result<T, E>>>) -> Self {
+    pub fn new(uid: usize, timeout: u32, inner: Arc<Consumer<Result<T, E>>>, sender: Arc<Producer<task::Task>>) -> Self {
         FutTask {
             uid: uid,
-            inner: inner,
             timeout: now_millisecond() + timeout as i64,
+            inner: inner,
+            sender: sender,
         }
     }
 
@@ -46,7 +52,13 @@ impl<T: Send + 'static, E: Send + 'static> Future for FutTask<T, E> {
                 Ok(Err(e)) => Err(e),
                 Err(e) => {
                     match e {
-                        ConsumeError::Empty => Ok(Async::NotReady), //还未准备好
+                        ConsumeError::Empty => {
+                            //还未准备好
+                            match self.sender.produce(futures::task::current()) {
+                                Err(e) => resume_unwind(Box::new(e.to_string())),
+                                Ok(_) => Ok(Async::NotReady),
+                            }
+                        },
                         _ => resume_unwind(Box::new("future task failed")), //异常
                     }
                 },
