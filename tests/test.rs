@@ -1,18 +1,31 @@
+#![feature(fnbox)]
+
+extern crate npnc;
+extern crate futures;
+
 extern crate pi_lib;
 extern crate pi_base;
 
 use std::thread;
 use std::sync::Arc;
-use std::io::Result;
+use std::boxed::FnBox;
 use std::path::PathBuf;
 use std::time::Duration;
+use std::result::Result as NormalResult;
+use std::io::{Error, Result};
 
-use pi_base::pi_base_impl::STORE_TASK_POOL;
+use futures::*;
+use npnc::bounded::mpmc::{Producer, Consumer};
+
+use pi_lib::atom::Atom;
+use pi_base::task::TaskType;
+use pi_base::pi_base_impl::{STORE_TASK_POOL, EXT_TASK_POOL, cast_ext_task};
 use pi_base::worker_pool::WorkerPool;
 use pi_base::file::{Shared, AsyncFile, AsynFileOptions, WriteOptions};
 use pi_base::util::{CompressLevel, compress, uncompress};
+use pi_base::future_pool::FutTaskPool;
 
-#[test]
+// #[test]
 fn test_lz4() {
     let string = String::from("asdfasdfpoiq;'wej(*(^$l;kKJ个）（&（）KLJ：LJLK：JLK：J：）（*）（*&（*&……&%……*UJK《JJL：HKLJHLKJHKJHKLHL：L：KHKJLGHYU……*&（%&……￥R%$#%$@#$%EDGFVNMLI_)(*%ERDHJGH0907886rtfhh)(&&$%$GFJHHJLJIOP(*jg%&$oujhlkjhnmgjhgljy98^&%^##$@$9878756543jkhmnbkmjou(*&(%^%$dfdhgjnlku^^%$$#%$egfcvmjhnl:kjo(&(&^%^%erfdgbh<jhkhiu^*(&*%&^%$^%ergfghghjlnbcvvxdasaew#$#%^*()_)(ytghjkl<mn%^%%#$%erdcffv:+{?}*&^%$#@!wsdefgw@@#$%^&JK;IO[IOU9078965(*&^%#$%$TGHJGFDFDGJHKIUTyghjkhty&ytkjljhgfghjhgfcvbnmrt(*&#*^$#^&*(*&^%$%&*(*&^%&^%$yhgffvbnmikyr$##%^&*(*&阿斯利康大家法律萨芬基本原理；声嘶力竭j8aslkjdfqpkmvpo09模压暗室逢灯阿斯顿发生地方东奔西走；辊；；基金会利用好吗，民");
     let buffer = string.as_bytes();
@@ -107,7 +120,7 @@ fn test_file() {
 	thread::sleep(Duration::from_millis(1000));
 }
 
-#[test]
+// #[test]
 fn test_shared_file() {
 	let worker_pool = Box::new(WorkerPool::new(10, 1024 * 1024, 10000));
     worker_pool.run(STORE_TASK_POOL.clone());
@@ -163,4 +176,46 @@ fn test_shared_file() {
 	};
 	AsyncFile::rename(PathBuf::from(r"foo0.txt"), PathBuf::from(r"foo0.swap"), Box::new(rename));
 	thread::sleep(Duration::from_millis(1000));
+}
+
+#[test]
+fn test_future() {
+	let worker_pool = Box::new(WorkerPool::new(3, 1024 * 1024, 10000));
+    worker_pool.run(EXT_TASK_POOL.clone());
+
+	let pool = FutTaskPool::new(cast_ext_task);
+	let callback = Box::new(move |executor: fn(TaskType, u64, Box<FnBox()>, Atom), 
+									sender: Arc<Producer<NormalResult<usize, Error>>>, 
+									receiver: Arc<Consumer<task::Task>>,
+									uid: usize| {
+		let func = Box::new(move || {
+			thread::sleep_ms(10);
+			match receiver.consume() {
+				Err(e) => panic!("receive failed, {:?}", e),
+				Ok(task) => {
+					task.notify();
+					assert!(sender.produce(Ok(uid)).is_ok());
+				},
+			}
+		});
+		executor(TaskType::Sync, 10000000, func, Atom::from("test future task"));
+	});
+	let mut future = pool.spawn(callback, 5000);
+	let mut count = 0;
+	loop {
+		count += 1;
+		thread::sleep_ms(1);
+		match future.poll() {
+			Ok(async) => {
+				match async {
+					Async::Ready(uid) => {
+						assert!(uid == 0);
+						break;
+					}
+					_ => continue,
+				}
+			},
+			_ => continue,
+		}
+	}
 }
