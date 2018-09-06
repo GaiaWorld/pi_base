@@ -154,13 +154,17 @@ impl Shared for SharedFile {
             let r = self.inner.seek_read(&mut vec[..], pos);
 
             match r {
+                Ok(0) => {
+                    //读完成
+                    callback(self, Ok(vec));
+                },
                 Ok(short_len) if short_len < len => {
                     //继续读
                     pread_continue(vec, self, pos + short_len as u64, len - short_len, callback);
                 },
                 Ok(_len) => {
                     //读完成
-                    callback(self, Ok(vec))
+                    callback(self, Ok(vec));
                 },
                 Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                     //重复读
@@ -177,14 +181,10 @@ impl Shared for SharedFile {
             return callback(self, Err(Error::new(ErrorKind::Other, "fpread failed, invalid len")));
         }
 
-        let buf_len = buf.len() as u64;
-        if buf_len <= buf_pos {
-            return callback(self, Err(Error::new(ErrorKind::Other, "fpread failed, invalid buf pos")));
-        }
-
         let func = move || {
+            let buf_len = buf.len();
             let mut vec = buf;
-            if (buf_len - buf_pos) < len as u64 {
+            if (buf_len - buf_pos as usize) < len {
                 //当前空间不够，则扩容并初始化
                 vec.resize(len, 0);
             }
@@ -195,13 +195,17 @@ impl Shared for SharedFile {
             let r = self.inner.seek_read(&mut vec[buf_pos as usize..], pos);
 
             match r {
+                Ok(0) => {
+                    //读完成
+                    callback(self, Ok(vec));
+                }
                 Ok(short_len) if short_len < len => {
                     //继续读
                     fpread_continue(vec, buf_pos + short_len as u64, self, pos + short_len as u64, len - short_len, callback);
                 },
                 Ok(_len) => {
                     //读完成
-                    callback(self, Ok(vec))
+                    callback(self, Ok(vec));
                 },
                 Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                     //重复读
@@ -551,13 +555,17 @@ fn pread_continue(mut vec: Vec<u8>, file: SharedFile, pos: u64, len: usize, call
         let r = file.inner.seek_read(&mut vec[pos as usize..(pos as usize + len)], pos);
 
         match r {
+            Ok(0) => {
+                //读完成
+                callback(file, Ok(vec));
+            }
             Ok(short_len) if short_len < len => {
                 //继续读
                 pread_continue(vec, file, pos + short_len as u64, len - short_len, callback);
             },
             Ok(_len) => {
                 //读完成
-                callback(file, Ok(vec))
+                callback(file, Ok(vec));
             },
             Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                 //重复读
@@ -578,13 +586,17 @@ fn fpread_continue(mut vec: Vec<u8>, vec_pos: u64, file: SharedFile, pos: u64, l
         let r = file.inner.seek_read(&mut vec[vec_pos as usize..(pos as usize + len)], pos);
 
         match r {
+            Ok(0) => {
+                //读完成
+                callback(file, Ok(vec));
+            }
             Ok(short_len) if short_len < len => {
                 //继续读
                 fpread_continue(vec, vec_pos + short_len as u64, file, pos + short_len as u64, len - short_len, callback);
             },
             Ok(_len) => {
                 //读完成
-                callback(file, Ok(vec))
+                callback(file, Ok(vec));
             },
             Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                 //重复读

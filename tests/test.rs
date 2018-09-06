@@ -44,7 +44,7 @@ fn test_lz4() {
     assert!(String::from_utf8(vec_).ok().unwrap() == string);
 }
 
-#[test]
+// #[test]
 fn test_file() {
 	let worker_pool = Box::new(WorkerPool::new(10, 1024 * 1024, 10000));
     worker_pool.run(STORE_TASK_POOL.clone());
@@ -120,7 +120,7 @@ fn test_file() {
 	thread::sleep(Duration::from_millis(1000));
 }
 
-// #[test]
+#[test]
 fn test_shared_file() {
 	let worker_pool = Box::new(WorkerPool::new(10, 1024 * 1024, 10000));
     worker_pool.run(STORE_TASK_POOL.clone());
@@ -130,6 +130,7 @@ fn test_shared_file() {
 		let shared = Arc::new(f0.ok().unwrap());
 		let f0 = shared.clone();
 		let f1 = shared.clone();
+		let f3 = shared.clone();
 
 		thread::spawn(move || {
 			let write = move |shared0: Arc<AsyncFile>, result: Result<usize>| {
@@ -157,11 +158,25 @@ fn test_shared_file() {
 			let read = move |f10: Arc<AsyncFile>, result: Result<Vec<u8>>| {
 				assert!(result.is_ok() && result.ok().unwrap().len() == 250);
 				let write = move |_f11: Arc<AsyncFile>, result: Result<usize>| {
-					assert!(result.is_ok() && result.ok() == Some(12));
+					assert!(result.is_ok());
 				};
-				f10.pwrite(WriteOptions::SyncAll(true), 250, Vec::from("\nHello Rust\n".as_bytes()), Box::new(write));
+				f10.pwrite(WriteOptions::SyncAll(true), 250, Vec::from("\nHello Rust0\n".as_bytes()), Box::new(write));
 			};
 			f1.pread(0, 250, Box::new(read));
+		});
+
+		thread::spawn(move || {
+			let read = move |f11: Arc<AsyncFile>, result: Result<Vec<u8>>| {
+				assert!(result.is_ok());
+				println!("!!!!!!result: {:?}", result);
+				let write = move |_f11: Arc<AsyncFile>, result: Result<usize>| {
+					assert!(result.is_ok());
+				};
+				f11.pwrite(WriteOptions::SyncAll(true), 262, Vec::from("\nHello Rust1\n".as_bytes()), Box::new(write));
+			};
+			let mut buf = Vec::new();
+			buf.resize(3, 255);
+			f3.fpread(buf, 3, 0, 250, Box::new(read));
 		});
 	};
 	AsyncFile::open(PathBuf::from(r"foo0.txt"), AsynFileOptions::ReadWrite(1), Box::new(open));
@@ -178,7 +193,7 @@ fn test_shared_file() {
 	thread::sleep(Duration::from_millis(1000));
 }
 
-#[test]
+// #[test]
 fn test_future() {
 	let worker_pool = Box::new(WorkerPool::new(3, 1024 * 1024, 10000));
     worker_pool.run(EXT_TASK_POOL.clone());
