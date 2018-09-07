@@ -176,7 +176,7 @@ fn test_shared_file() {
 			};
 			let mut buf = Vec::new();
 			buf.resize(3, 255);
-			f3.fpread(buf, 3, 0, 250, Box::new(read));
+			f3.fpread(buf, 3, 0, 262, Box::new(read));
 		});
 	};
 	AsyncFile::open(PathBuf::from(r"foo0.txt"), AsynFileOptions::ReadWrite(1), Box::new(open));
