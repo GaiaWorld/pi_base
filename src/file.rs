@@ -144,36 +144,9 @@ impl Shared for SharedFile {
             return callback(self, Err(Error::new(ErrorKind::Other, "pread failed, invalid len")));
         }
 
-        let func = move || {
-            let mut vec: Vec<u8> = Vec::with_capacity(len);
-            vec.resize(len, 0);
-
-            #[cfg(any(unix))]
-            let r = self.inner.read_at(&mut vec[..], pos);
-            #[cfg(any(windows))]
-            let r = self.inner.seek_read(&mut vec[..], pos);
-
-            match r {
-                Ok(0) => {
-                    //读完成
-                    callback(self, Ok(vec));
-                },
-                Ok(short_len) if short_len < len => {
-                    //继续读
-                    pread_continue(vec, short_len as u64, self, pos + short_len as u64, len - short_len, callback);
-                },
-                Ok(_len) => {
-                    //读完成
-                    callback(self, Ok(vec));
-                },
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
-                    //重复读
-                    self.pread(pos, len, callback);
-                },
-                Err(e) => callback(self, Err(e)),
-            }
-        };
-        cast_store_task(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_READ_ASYNC_FILE_INFO));
+        let mut vec: Vec<u8> = Vec::with_capacity(len);
+        vec.resize(len, 0);
+        pread_continue(vec, 0, self, pos, len, callback);
     }
 
     fn fpread(self, buf: Vec<u8>, buf_pos: u64, pos: u64, len: usize, callback: Box<FnBox(Arc<Self::T>, Result<Vec<u8>>)>) {
@@ -181,79 +154,28 @@ impl Shared for SharedFile {
             return callback(self, Err(Error::new(ErrorKind::Other, "fpread failed, invalid len")));
         }
 
-        let func = move || {
-            let buf_len = buf.len();
-            let mut vec = buf;
-            if (buf_len - buf_pos as usize) < len {
-                //当前空间不够，则扩容并初始化
-                vec.resize(len, 0);
+        let buf_len = buf.len();
+        let mut vec = buf;
+        if (buf_len as isize - buf_pos as isize) < len as isize {
+            //当前空间不够，则扩容并初始化
+            if buf_pos as usize > buf_len {
+                //偏移大于当前长度
+                vec.resize(buf_pos as usize + len, 0);
+            } else {
+                //偏移小于等于当前长度
+                vec.resize(buf_len as usize + len, 0);
             }
-
-            #[cfg(any(unix))]
-            let r = self.inner.read_at(&mut vec[buf_pos as usize..], pos);
-            #[cfg(any(windows))]
-            let r = self.inner.seek_read(&mut vec[buf_pos as usize..], pos);
-
-            match r {
-                Ok(0) => {
-                    //读完成
-                    callback(self, Ok(vec));
-                }
-                Ok(short_len) if short_len < len => {
-                    //继续读
-                    fpread_continue(vec, buf_pos + short_len as u64, self, pos + short_len as u64, len - short_len, callback);
-                },
-                Ok(_len) => {
-                    //读完成
-                    callback(self, Ok(vec));
-                },
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
-                    //重复读
-                    self.fpread(vec, buf_pos, pos, len, callback);
-                },
-                Err(e) => callback(self, Err(e)),
-            }
-        };
-        cast_store_task(ASYNC_FILE_TASK_TYPE, READ_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_READ_ASYNC_FILE_INFO));
+        }
+        fpread_continue(vec, buf_pos, self, pos, len, callback);
     }
 
-    fn pwrite(mut self, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<Self::T>, Result<usize>)>) {
+    fn pwrite(self, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<Self::T>, Result<usize>)>) {
         let len = bytes.len();
         if len == 0 {
             return callback(self, Ok(0));
         }
 
-        let func = move || {
-            #[cfg(any(unix))]
-            let r = self.inner.write_at(&bytes[..], pos);
-            #[cfg(any(windows))]
-            let r = self.inner.seek_write(&bytes[..], pos);
-
-            match r {
-                Ok(short_len) if short_len < len => {
-                    //继续写
-                    pwrite_continue(len - short_len, self, options, pos + short_len as u64, bytes, callback);
-                },
-                Ok(len) => {
-                    //写完成
-                    let result = match options {
-                        WriteOptions::None => Ok(len),
-                        WriteOptions::Flush => Arc::make_mut(&mut self).inner.flush().and(Ok(len)),
-                        WriteOptions::Sync(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_data()).and(Ok(len)),
-                        WriteOptions::Sync(false) => Arc::make_mut(&mut self).inner.sync_data().and(Ok(len)),
-                        WriteOptions::SyncAll(true) => Arc::make_mut(&mut self).inner.flush().and_then(|_| self.inner.sync_all()).and(Ok(len)),
-                        WriteOptions::SyncAll(false) => Arc::make_mut(&mut self).inner.sync_all().and(Ok(len)),
-                    };
-                    callback(self, result);
-                },
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => {
-                    //重复写
-                    self.pwrite(options, pos, bytes, callback);
-                },
-                Err(e) => callback(self, Err(e)),
-            }
-        };
-        cast_store_task(ASYNC_FILE_TASK_TYPE, WRITE_ASYNC_FILE_PRIORITY, Box::new(func), Atom::from(SHARED_WRITE_ASYNC_FILE_INFO));
+        pwrite_continue(len, self, options, pos, bytes, 0, callback);
     }
 }
 
@@ -609,17 +531,17 @@ fn fpread_continue(mut vec: Vec<u8>, vec_pos: u64, file: SharedFile, pos: u64, l
 }
 
 //继续写
-fn pwrite_continue(len: usize, mut file: SharedFile, options: WriteOptions, pos: u64, bytes: Vec<u8>, callback: Box<FnBox(Arc<<SharedFile as Shared>::T>, Result<usize>)>) {
+fn pwrite_continue(len: usize, mut file: SharedFile, options: WriteOptions, pos: u64, bytes: Vec<u8>, vec_pos: u64, callback: Box<FnBox(Arc<<SharedFile as Shared>::T>, Result<usize>)>) {
     let func = move || {
         #[cfg(any(unix))]
-        let r = file.inner.write_at(&bytes[pos as usize..len], pos);
+        let r = file.inner.write_at(&bytes[vec_pos as usize..len], pos);
         #[cfg(any(windows))]
-        let r = file.inner.seek_write(&bytes[pos as usize..len], pos);
+        let r = file.inner.seek_write(&bytes[vec_pos as usize..len], pos);
 
         match r {
             Ok(short_len) if short_len < len => {
                 //继续写
-                pwrite_continue(len - short_len, file, options, pos + short_len as u64, bytes, callback);
+                pwrite_continue(len - short_len, file, options, pos + short_len as u64, bytes, vec_pos + short_len as u64, callback);
             },
             Ok(len) => {
                 //写完成
@@ -635,7 +557,7 @@ fn pwrite_continue(len: usize, mut file: SharedFile, options: WriteOptions, pos:
             },
             Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                 //重复写
-                pwrite_continue(len, file, options, pos, bytes, callback);
+                pwrite_continue(len, file, options, pos, bytes, vec_pos, callback);
             },
             Err(e) => callback(file, Err(e)),
         }
