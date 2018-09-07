@@ -160,7 +160,7 @@ impl Shared for SharedFile {
                 },
                 Ok(short_len) if short_len < len => {
                     //继续读
-                    pread_continue(vec, self, pos + short_len as u64, len - short_len, callback);
+                    pread_continue(vec, short_len as u64, self, pos + short_len as u64, len - short_len, callback);
                 },
                 Ok(_len) => {
                     //读完成
@@ -547,12 +547,12 @@ fn get_block_size(_meta: &Metadata) -> usize {
 }
 
 //继续读
-fn pread_continue(mut vec: Vec<u8>, file: SharedFile, pos: u64, len: usize, callback: Box<FnBox(Arc<<SharedFile as Shared>::T>, Result<Vec<u8>>)>) {
+fn pread_continue(mut vec: Vec<u8>, vec_pos: u64, file: SharedFile, pos: u64, len: usize, callback: Box<FnBox(Arc<<SharedFile as Shared>::T>, Result<Vec<u8>>)>) {
     let func = move || {
         #[cfg(any(unix))]
-        let r = file.inner.read_at(&mut vec[pos as usize..(pos as usize + len)], pos);
+        let r = file.inner.read_at(&mut vec[vec_pos as usize..(vec_pos as usize + len)], pos);
         #[cfg(any(windows))]
-        let r = file.inner.seek_read(&mut vec[pos as usize..(pos as usize + len)], pos);
+        let r = file.inner.seek_read(&mut vec[vec_pos as usize ..(vec_pos as usize + len)], pos);
 
         match r {
             Ok(0) => {
@@ -561,7 +561,7 @@ fn pread_continue(mut vec: Vec<u8>, file: SharedFile, pos: u64, len: usize, call
             }
             Ok(short_len) if short_len < len => {
                 //继续读
-                pread_continue(vec, file, pos + short_len as u64, len - short_len, callback);
+                pread_continue(vec, vec_pos, file, pos + short_len as u64, len - short_len, callback);
             },
             Ok(_len) => {
                 //读完成
@@ -569,7 +569,7 @@ fn pread_continue(mut vec: Vec<u8>, file: SharedFile, pos: u64, len: usize, call
             },
             Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                 //重复读
-                file.pread(pos, len, callback);
+                pread_continue(vec, vec_pos, file, pos, len, callback);
             },
             Err(e) => callback(file, Err(e)),
         }
@@ -581,9 +581,9 @@ fn pread_continue(mut vec: Vec<u8>, file: SharedFile, pos: u64, len: usize, call
 fn fpread_continue(mut vec: Vec<u8>, vec_pos: u64, file: SharedFile, pos: u64, len: usize, callback: Box<FnBox(Arc<<SharedFile as Shared>::T>, Result<Vec<u8>>)>) {
     let func = move || {
         #[cfg(any(unix))]
-        let r = file.inner.read_at(&mut vec[vec_pos as usize..(pos as usize + len)], pos);
+        let r = file.inner.read_at(&mut vec[vec_pos as usize..(vec_pos as usize + len)], pos);
         #[cfg(any(windows))]
-        let r = file.inner.seek_read(&mut vec[vec_pos as usize..(pos as usize + len)], pos);
+        let r = file.inner.seek_read(&mut vec[vec_pos as usize..(vec_pos as usize + len)], pos);
 
         match r {
             Ok(0) => {
@@ -600,7 +600,7 @@ fn fpread_continue(mut vec: Vec<u8>, vec_pos: u64, file: SharedFile, pos: u64, l
             },
             Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                 //重复读
-                file.fpread(vec, vec_pos, pos, len, callback);
+                fpread_continue(vec, vec_pos, file, pos, len, callback);
             },
             Err(e) => callback(file, Err(e)),
         }
@@ -635,7 +635,7 @@ fn pwrite_continue(len: usize, mut file: SharedFile, options: WriteOptions, pos:
             },
             Err(ref e) if e.kind() == ErrorKind::Interrupted => {
                 //重复写
-                file.pwrite(options, pos, bytes, callback);
+                pwrite_continue(len, file, options, pos, bytes, callback);
             },
             Err(e) => callback(file, Err(e)),
         }
