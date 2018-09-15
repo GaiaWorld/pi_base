@@ -139,12 +139,18 @@ impl Worker {
 
 #[inline]
 fn check_slow_task(worker: &Worker, task: &mut Task) {
+    use std::panic;
     let time = Instant::now();
-    task.run(); //执行任务
-    let elapsed = time.elapsed();
-    if time.elapsed() >= worker.slow {
-        //记录慢任务
-        //TODO...
-        println!("!!!!!!slow task, time: {}, task: {}", elapsed.as_secs() * 1000000 + (elapsed.subsec_micros() as u64), task);
+    if let Err(e) = panic::catch_unwind(|| { task.run(); }) {
+        //执行任务失败
+        let elapsed = time.elapsed();
+        println!("===> Task Run Error, time: {}, task: {}, error: {:?}", elapsed.as_secs() * 1000000 + (elapsed.subsec_micros() as u64), task, e);
+    } else {
+        //执行任务成功
+        let elapsed = time.elapsed();
+        if time.elapsed() >= worker.slow {
+            //记录慢任务
+            println!("===> Slow Task, time: {}, task: {}", elapsed.as_secs() * 1000000 + (elapsed.subsec_micros() as u64), task);
+        }
     }
 }

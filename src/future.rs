@@ -4,7 +4,7 @@ use std::marker::{Send, Sync};
 
 use futures::*;
 use npnc::ConsumeError;
-use npnc::bounded::mpmc::{Producer, Consumer};
+use npnc::bounded::spsc::{Producer, Consumer};
 
 use util::now_millisecond;
 

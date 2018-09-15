@@ -3,7 +3,7 @@ use std::boxed::FnBox;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::task::Task;
-use npnc::bounded::mpmc::{channel as npnc_channel, Producer, Consumer};
+use npnc::bounded::spsc::{channel as npnc_channel, Producer, Consumer};
 
 use pi_lib::atom::Atom;
 
