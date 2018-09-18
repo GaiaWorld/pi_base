@@ -244,6 +244,11 @@ fn add_monitor(watchers: &mut HashMap<PathBuf, RecommendedWatcher>, sender: &Sen
 //监听指定路径
 fn monitor_path(watchers: &mut HashMap<PathBuf, RecommendedWatcher>, sender: &Sender<DebouncedEvent>, path: PathBuf, is_rec: bool, time: u64) 
     -> Result<(), String> {
+        if watchers.contains_key(&path) {
+            //指定路径已监听
+            return Err(format!("add fs monitor failed, path exists"));
+        }
+
         match watcher(sender.clone(), Duration::from_millis(time)) {
             Err(e) => Err(format!("add fs monitor failed, path: {:?}, e: {:?}", path, e)),
             Ok(mut watcher) => {
