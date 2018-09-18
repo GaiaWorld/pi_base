@@ -54,6 +54,11 @@ impl<T: Send + 'static, E: Send + 'static> Future for FutTask<T, E> {
                     match e {
                         ConsumeError::Empty => {
                             //还未准备好
+                            if self.sender.len() > 0 {
+                                //忽略重复未准备好
+                                return Ok(Async::NotReady);
+                            }
+
                             match self.sender.produce(futures::task::current()) {
                                 Err(e) => resume_unwind(Box::new(e.to_string())),
                                 Ok(_) => Ok(Async::NotReady),

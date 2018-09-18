@@ -24,11 +24,13 @@ extern crate threadpool;
 extern crate lazy_static;
 
 extern crate lz4;
+extern crate notify;
 
 extern crate pi_lib;
 
 pub mod pi_base_impl;
 pub mod file;
+pub mod fs_monitor;
 pub mod future;
 pub mod future_pool;
 pub mod worker;
