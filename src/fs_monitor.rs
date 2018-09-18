@@ -55,7 +55,7 @@ enum FSMonitorEvent {
 */
 pub struct FSMonitor {
     is_running: bool,                                   //是否正在运行
-    options: FSMonitorOptions,                          //选项
+    options: FSMonitorOptions,                          //初始化选项
     watchers: HashMap<PathBuf, RecommendedWatcher>,     //监听器表
     listener: FSListener,                               //监听者
     watcher_sender: Option<Sender<DebouncedEvent>>,     //监听器消息发送器
@@ -64,7 +64,7 @@ pub struct FSMonitor {
 
 impl Drop for FSMonitor {
     fn drop(&mut self) {
-        //关闭监听
+        //关闭监听器
         if let Err(e) = self.stop() {
             println!("!!!> Drop FSMonitor Error, e: {:?}", e);
         }
