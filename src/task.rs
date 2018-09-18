@@ -16,6 +16,8 @@ pub enum TaskType {
     SyncImme,   //同步立即任务
 }
 
+unsafe impl Send for TaskType {}
+
 /*
 * 任务结构
 */
