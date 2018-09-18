@@ -285,15 +285,23 @@ fn wait_recv(receiver: &Receiver<DebouncedEvent>, consumer: &Consumer<FSMonitorE
         match consumer.consume() {
             Err(e) => {
                 match e {
-                    ConsumeError::Disconnected => break, //对端已关闭，则立即退出监听线程
+                    ConsumeError::Disconnected => {
+                        //所有者已关闭，则立即退出监听线程
+                        println!("!!!> Close Fs Monitor, owner closed");
+                        break;
+                    },
                     ConsumeError::Empty => (), //没有管理事件，则忽略
                 }
             },
             Ok(event) => {
                 match event {
-                    FSMonitorEvent::Stop => break, //退出监听线程
+                    FSMonitorEvent::Stop => {
+                        //所有者请求关闭监听线程
+                        println!("!!!> Close Fs Monitor, owner request close");
+                        break;
+                    },
                     FSMonitorEvent::Pause(time) => {
-                        //暂停监听线程指定时长
+                        //所有者请求暂停监听线程指定时长
                         thread::sleep(Duration::from_millis(time as u64));
                     }
                 }
@@ -313,6 +321,11 @@ fn wait_recv(receiver: &Receiver<DebouncedEvent>, consumer: &Consumer<FSMonitorE
             },
             Ok(DebouncedEvent::Rename(src, dst)) => {
                 (listener.0)(FSChangeEvent::Rename(src, dst));
+            },
+            Err(e) => {
+                //对端已关闭，则立即退出监听线程
+                println!("!!!> Close Fs Monitor, peer closed, e: {:?}", e);
+                break;
             },
             _ => (),
         }
