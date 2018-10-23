@@ -16,21 +16,24 @@ pub fn now_second() -> i64 {
 * 获取当前本地时间的毫秒数
 */
 pub fn now_millisecond() -> i64 {
-	time::get_time().sec * 1000 + (time::get_time().nsec / 1000000) as i64
+    let time = time::get_time();
+	time.sec * 1000 + (time.nsec / 1000000) as i64
 }
 
 /*
 * 获取当前本地时间的微秒数
 */
 pub fn now_microsecond() -> i64 {
-	time::get_time().sec * 1000000 + (time::get_time().nsec / 1000) as i64
+    let time = time::get_time();
+	time.sec * 1000000 + (time.nsec / 1000) as i64
 }
 
 /*
 * 获取当前本地时间的纳秒数
 */
 pub fn now_nanosecond() -> i128 {
-    (time::get_time().sec * 1000000000) as i128 + time::get_time().nsec as i128
+    let time = time::get_time();
+    (time.sec * 1000000000) as i128 + time.nsec as i128
 }
 
 /*
