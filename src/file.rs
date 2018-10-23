@@ -96,6 +96,7 @@ pub enum AsynFileOptions {
     OnlyAppend(u8),
     ReadAppend(u8),
     ReadWrite(u8),
+    TruncateWrite(u8),
 }
 
 /*
@@ -216,12 +217,13 @@ impl AsyncFile {
     //以指定方式打开指定文件
     pub fn open<P: AsRef<Path> + Send + 'static>(path: P, options: AsynFileOptions, callback: Box<FnBox(Result<Self>)>) {
         let func = move || {
-            let (r, w, a, c, len) = match options {
-                AsynFileOptions::OnlyRead(len) => (true, false, false, false, len),
-                AsynFileOptions::OnlyWrite(len) => (false, true, false, true, len),
-                AsynFileOptions::OnlyAppend(len) => (false, false, true, true, len),
-                AsynFileOptions::ReadAppend(len) => (true, false, true, true, len),
-                AsynFileOptions::ReadWrite(len) => (true, true, false, true, len),
+            let (r, w, a, c, t, len) = match options {
+                AsynFileOptions::OnlyRead(len) => (true, false, false, false, false, len),
+                AsynFileOptions::OnlyWrite(len) => (false, true, false, true, false, len),
+                AsynFileOptions::OnlyAppend(len) => (false, false, true, true, false, len),
+                AsynFileOptions::ReadAppend(len) => (true, false, true, true, false, len),
+                AsynFileOptions::ReadWrite(len) => (true, true, false, true, false, len),
+                AsynFileOptions::TruncateWrite(len) => (false, true, false, true, true, len),
             };
 
             match OpenOptions::new()
@@ -229,6 +231,7 @@ impl AsyncFile {
                             .write(w)
                             .append(a)
                             .create(c)
+                            .truncate(t)
                             .open(path) {
                 Err(e) => callback(Err(e)),
                 Ok(file) => {
