@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration};
-use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering, AtomicU64};
+use std::sync::atomic::{AtomicUsize, Ordering, AtomicU64};
 use std::boxed::FnBox;
 use std::mem::transmute;
 
@@ -62,15 +62,15 @@ impl Timer{
 		});
 	}
 
-	pub fn set_timeout(&self, f: Box<FnBox()>, ms: u32) -> Arc<AtomicIsize>{
+	pub fn set_timeout(&self, f: Box<FnBox()>, ms: u32) -> Arc<AtomicUsize>{
 		self.statistics.all_count.fetch_add(1, Ordering::Relaxed);
         let mut w = TIMER.wheel.lock().unwrap();
         let time = w.time;
 		w.insert(Item{elem: unsafe { transmute(f) }, time_point: time + (ms as u64)})
 	}
 
-	pub fn cancel(&self, index: Arc<AtomicIsize>) -> Option<Box<FnBox()>>{
-		match self.wheel.lock().unwrap().try_remove(index) {
+	pub fn cancel(&self, index: Arc<AtomicUsize>) -> Option<Box<FnBox()>>{
+		match self.wheel.lock().unwrap().try_remove(&index) {
 			Some(v) => {
                 self.statistics.cancel_count.fetch_add(1, Ordering::Relaxed);
                 unsafe { transmute(v.elem) }
@@ -80,7 +80,7 @@ impl Timer{
 	}
 
     //执行任务，返回任务执行完的时间
-    fn run_task(&self, r: &Vec<(Item<(usize, usize)>, Arc<AtomicIsize>)>, old: u64) -> u64{
+    fn run_task(&self, r: &Vec<(Item<(usize, usize)>, Arc<AtomicUsize>)>, old: u64) -> u64{
         self.statistics.run_count.fetch_add(r.len(), Ordering::Relaxed);//统计运行任务个数
         for v in r.iter(){
             let func: Box<FnBox()> = unsafe { transmute(v.0.elem) };
